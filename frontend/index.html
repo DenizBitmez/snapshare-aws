@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html>
-    <html lang="tr">
+<html lang="tr">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SnapShare - Serverless AWS</title>
+  <title>SnapShare — Serverless AWS</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       font-family: system-ui, -apple-system, sans-serif;
       background: #0f172a;
@@ -16,35 +16,155 @@
       justify-content: center;
       min-height: 100vh;
       margin: 0;
-      text-align: center;
+      padding: 1rem;
     }
     .card {
       background: #1e293b;
-      padding: 2.5rem;
+      padding: 2rem;
       border-radius: 12px;
       box-shadow: 0 10px 25px rgba(0,0,0,0.5);
       border: 1px solid #334155;
-      max-width: 500px;
+      width: 100%;
+      max-width: 440px;
     }
-    h1 { color: #38bdf8; margin-bottom: 0.5rem; }
-    p { color: #94a3b8; line-height: 1.6; }
-    .badge {
-      display: inline-block;
+    h1 { color: #38bdf8; margin: 0 0 0.5rem 0; font-size: 1.8rem; text-align: center; }
+    p.subtitle { color: #94a3b8; font-size: 0.9rem; text-align: center; margin-bottom: 1.5rem; }
+    .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+    .tab-btn {
+      flex: 1;
+      padding: 0.6rem;
+      background: #334155;
+      color: #94a3b8;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .tab-btn.active { background: #0284c7; color: white; }
+    .form-group { margin-bottom: 1rem; text-align: left; }
+    label { display: block; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.3rem; }
+    input {
+      width: 100%;
+      padding: 0.7rem;
+      background: #0f172a;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      color: white;
+      font-size: 0.95rem;
+    }
+    input:focus { outline: none; border-color: #38bdf8; }
+    button.submit-btn {
+      width: 100%;
+      padding: 0.8rem;
       background: #0284c7;
       color: white;
-      padding: 0.3rem 0.8rem;
-      border-radius: 9999px;
-      font-size: 0.85rem;
+      border: none;
+      border-radius: 6px;
       font-weight: 600;
+      cursor: pointer;
+      font-size: 1rem;
+      margin-top: 0.5rem;
+    }
+    button.submit-btn:hover { background: #0369a1; }
+    .alert {
+      padding: 0.8rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
       margin-top: 1rem;
+      display: none;
+      word-break: break-word;
+    }
+    .alert-error { background: #7f1d1d; color: #fecaca; }
+    .alert-success { background: #064e3b; color: #a7f3d0; }
+    .auth-state {
+      background: #0f172a;
+      border: 1px dashed #38bdf8;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      font-size: 0.85rem;
+    }
+    .badge {
+      display: inline-block;
+      background: #0369a1;
+      color: white;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      margin-bottom: 0.5rem;
     }
   </style>
+  <!-- Amazon Cognito SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.12/dist/amazon-cognito-identity.min.js"></script>
 </head>
 <body>
   <div class="card">
-    <h1>SnapShare</h1>
-    <p>AWS CDK ile dağıtılmış Sunucusuz Fotoğraf Platformu.</p>
-    <div class="badge">Aşama 1: S3 + CloudFront (OAC) Aktif!</div>
+    <h1>📸 SnapShare</h1>
+    <p class="subtitle">AWS CDK & Serverless Architecture</p>
+
+    <div id="unauth-view">
+      <div class="tabs">
+        <button class="tab-btn active" id="tab-login" onclick="switchTab('login')">Giriş Yap</button>
+        <button class="tab-btn" id="tab-signup" onclick="switchTab('signup')">Kayıt Ol</button>
+        <button class="tab-btn" id="tab-confirm" onclick="switchTab('confirm')">Doğrula</button>
+      </div>
+
+      <!-- Giriş Formu -->
+      <form id="form-login" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>E-posta</label>
+          <input type="email" id="login-email" required placeholder="ornek@email.com" />
+        </div>
+        <div class="form-group">
+          <label>Şifre</label>
+          <input type="password" id="login-password" required placeholder="••••••••" />
+        </div>
+        <button type="submit" class="submit-btn">Giriş Yap</button>
+      </form>
+
+      <!-- Kayıt Formu -->
+      <form id="form-signup" style="display: none;" onsubmit="handleSignUp(event)">
+        <div class="form-group">
+          <label>E-posta</label>
+          <input type="email" id="signup-email" required placeholder="ornek@email.com" />
+        </div>
+        <div class="form-group">
+          <label>Şifre (En az 8 karakter, 1 büyük harf, 1 rakam)</label>
+          <input type="password" id="signup-password" required placeholder="Gizli1234" />
+        </div>
+        <button type="submit" class="submit-btn">Kayıt Ol</button>
+      </form>
+
+      <!-- Doğrulama Kodu Formu -->
+      <form id="form-confirm" style="display: none;" onsubmit="handleConfirm(event)">
+        <div class="form-group">
+          <label>E-posta</label>
+          <input type="email" id="confirm-email" required placeholder="ornek@email.com" />
+        </div>
+        <div class="form-group">
+          <label>E-postaya Gelen Doğrulama Kodu</label>
+          <input type="text" id="confirm-code" required placeholder="123456" />
+        </div>
+        <button type="submit" class="submit-btn">Kodu Doğrula</button>
+      </form>
+    </div>
+
+    <!-- Giriş Yapıldı Görünümü -->
+    <div id="auth-view" style="display: none;">
+      <div class="badge">Oturum Açıldı ✅</div>
+      <p>Hoş geldin, <b id="user-display-email" style="color:#38bdf8;"></b>!</p>
+      
+      <div class="auth-state">
+        <span style="color:#94a3b8;">JWT Access Token Alındı (Sınav Konusu):</span>
+        <p style="font-family: monospace; font-size: 0.75rem; word-break: break-all; color:#a7f3d0;" id="token-preview"></p>
+      </div>
+
+      <button onclick="handleLogout()" class="submit-btn" style="background:#475569; margin-top:1rem;">Çıkış Yap</button>
+    </div>
+
+    <div id="status-box" class="alert"></div>
   </div>
+
+  <script src="app.js"></script>
 </body>
 </html>
