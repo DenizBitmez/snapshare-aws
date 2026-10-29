@@ -1,10 +1,13 @@
-
 const poolData = {
   UserPoolId: 'eu-central-1_KCWNYcwst',
   ClientId: '54do51ujicvh061g38les0ouhk',
 };
 
+const API_BASE_URL = 'https://47kdkr6syc.execute-api.eu-central-1.amazonaws.com';
+
 const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+let currentIdToken = null;
+let selectedFile = null;
 
 function showStatus(message, isError = false) {
   const box = document.getElementById('status-box');
@@ -78,9 +81,9 @@ function handleLogin(e) {
   showStatus('Giriş yapılıyor...');
   cognitoUser.authenticateUser(authenticationDetails, {
     onSuccess: (result) => {
-      const accessToken = result.getAccessToken().getJwtToken();
-      updateUIForAuth(email, accessToken);
-      showStatus('Giriş başarılı!');
+      currentIdToken = result.getIdToken().getJwtToken();
+      updateUIForAuth(email);
+      showStatus('Giriş başarılı! Şimdi bir fotoğraf seçip yükleyebilirsin.');
     },
     onFailure: (err) => {
       showStatus(err.message || JSON.stringify(err), true);
@@ -88,11 +91,10 @@ function handleLogin(e) {
   });
 }
 
-function updateUIForAuth(email, token) {
+function updateUIForAuth(email) {
   document.getElementById('unauth-view').style.display = 'none';
   document.getElementById('auth-view').style.display = 'block';
   document.getElementById('user-display-email').textContent = email;
-  document.getElementById('token-preview').textContent = token.substring(0, 80) + '... (JWT Aktif)';
 }
 
 function handleLogout() {
@@ -100,9 +102,101 @@ function handleLogout() {
   if (cognitoUser) {
     cognitoUser.signOut();
   }
+  currentIdToken = null;
+  selectedFile = null;
   document.getElementById('unauth-view').style.display = 'block';
   document.getElementById('auth-view').style.display = 'none';
   showStatus('Başarıyla çıkış yapıldı.');
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  selectedFile = file;
+  document.getElementById('file-info').textContent = `${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const preview = document.getElementById('preview');
+    preview.src = event.target.result;
+    preview.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+
+  document.getElementById('upload-btn').disabled = false;
+}
+
+async function uploadPhoto() {
+  if (!selectedFile || !currentIdToken) {
+    showStatus('Lütfen bir dosya seçin ve oturumunuzun açık olduğundan emin olun.', true);
+    return;
+  }
+
+  const uploadBtn = document.getElementById('upload-btn');
+  const progressContainer = document.getElementById('progress-container');
+  const progressBar = document.getElementById('progress-bar');
+
+  uploadBtn.disabled = true;
+  progressContainer.style.display = 'block';
+  progressBar.style.width = '10%';
+  showStatus('1/2: API Gateway üzerinden S3 Presigned URL alınıyor...');
+
+  try {
+    const presignRes = await fetch(`${API_BASE_URL}/photos/upload-url`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: currentIdToken,
+      },
+      body: JSON.stringify({
+        fileName: selectedFile.name,
+        contentType: selectedFile.type || 'image/jpeg',
+      }),
+    });
+
+    if (!presignRes.ok) {
+      const errData = await presignRes.json().catch(() => ({}));
+      throw new Error(errData.message || `API Hatası: ${presignRes.status}`);
+    }
+
+    const { uploadUrl, photoId } = await presignRes.json();
+    progressBar.style.width = '40%';
+    showStatus('2/2: Fotoğraf doğrudan S3 Uploads Bucket\'ına yükleniyor (Direct to S3)...');
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl, true);
+    xhr.setRequestHeader('Content-Type', selectedFile.type || 'image/jpeg');
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const percent = Math.round(40 + (e.loaded / e.total) * 55);
+        progressBar.style.width = percent + '%';
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        progressBar.style.width = '100%';
+        showStatus(`Başarılı! Fotoğraf S3'e ve DynamoDB'ye kaydedildi! (Photo ID: ${photoId})`);
+        uploadBtn.disabled = false;
+      } else {
+        showStatus(`S3 Yükleme Hatası (HTTP ${xhr.status})`, true);
+        uploadBtn.disabled = false;
+      }
+    };
+
+    xhr.onerror = () => {
+      showStatus('S3 Yükleme sırasında ağ hatası oluştu (CORS kontrol ediniz).', true);
+      uploadBtn.disabled = false;
+    };
+
+    xhr.send(selectedFile);
+  } catch (err) {
+    showStatus(err.message, true);
+    uploadBtn.disabled = false;
+    progressContainer.style.display = 'none';
+  }
 }
 
 window.onload = function () {
@@ -111,7 +205,8 @@ window.onload = function () {
     cognitoUser.getSession((err, session) => {
       if (err) return;
       if (session.isValid()) {
-        updateUIForAuth(cognitoUser.getUsername(), session.getAccessToken().getJwtToken());
+        currentIdToken = session.getIdToken().getJwtToken();
+        updateUIForAuth(cognitoUser.getUsername());
       }
     });
   }

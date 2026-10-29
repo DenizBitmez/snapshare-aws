@@ -25,7 +25,7 @@
       box-shadow: 0 10px 25px rgba(0,0,0,0.5);
       border: 1px solid #334155;
       width: 100%;
-      max-width: 440px;
+      max-width: 480px;
     }
     h1 { color: #38bdf8; margin: 0 0 0.5rem 0; font-size: 1.8rem; text-align: center; }
     p.subtitle { color: #94a3b8; font-size: 0.9rem; text-align: center; margin-bottom: 1.5rem; }
@@ -43,7 +43,7 @@
     .tab-btn.active { background: #0284c7; color: white; }
     .form-group { margin-bottom: 1rem; text-align: left; }
     label { display: block; font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.3rem; }
-    input {
+    input[type="email"], input[type="password"], input[type="text"] {
       width: 100%;
       padding: 0.7rem;
       background: #0f172a;
@@ -64,8 +64,10 @@
       cursor: pointer;
       font-size: 1rem;
       margin-top: 0.5rem;
+      transition: background 0.2s;
     }
     button.submit-btn:hover { background: #0369a1; }
+    button.submit-btn:disabled { background: #475569; cursor: not-allowed; }
     .alert {
       padding: 0.8rem;
       border-radius: 6px;
@@ -76,14 +78,6 @@
     }
     .alert-error { background: #7f1d1d; color: #fecaca; }
     .alert-success { background: #064e3b; color: #a7f3d0; }
-    .auth-state {
-      background: #0f172a;
-      border: 1px dashed #38bdf8;
-      border-radius: 8px;
-      padding: 1rem;
-      margin-top: 1rem;
-      font-size: 0.85rem;
-    }
     .badge {
       display: inline-block;
       background: #0369a1;
@@ -93,14 +87,56 @@
       font-size: 0.75rem;
       margin-bottom: 0.5rem;
     }
+    .upload-zone {
+      background: #0f172a;
+      border: 2px dashed #38bdf8;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-top: 1rem;
+      text-align: center;
+    }
+    .upload-zone input[type="file"] { display: none; }
+    .file-label {
+      cursor: pointer;
+      color: #38bdf8;
+      font-weight: 600;
+      display: block;
+    }
+    .file-info {
+      color: #94a3b8;
+      font-size: 0.85rem;
+      margin-top: 0.5rem;
+    }
+    .preview-img {
+      max-width: 100%;
+      max-height: 180px;
+      border-radius: 6px;
+      margin-top: 0.8rem;
+      display: none;
+      object-fit: cover;
+    }
+    .progress-bar-container {
+      width: 100%;
+      background: #334155;
+      border-radius: 4px;
+      height: 8px;
+      margin-top: 1rem;
+      overflow: hidden;
+      display: none;
+    }
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: #38bdf8;
+      transition: width 0.3s;
+    }
   </style>
-  <!-- Amazon Cognito SDK -->
   <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.12/dist/amazon-cognito-identity.min.js"></script>
 </head>
 <body>
   <div class="card">
     <h1>📸 SnapShare</h1>
-    <p class="subtitle">AWS CDK & Serverless Architecture</p>
+    <p class="subtitle">AWS SAA-C03 Serverless Capstone</p>
 
     <div id="unauth-view">
       <div class="tabs">
@@ -109,7 +145,6 @@
         <button class="tab-btn" id="tab-confirm" onclick="switchTab('confirm')">Doğrula</button>
       </div>
 
-      <!-- Giriş Formu -->
       <form id="form-login" onsubmit="handleLogin(event)">
         <div class="form-group">
           <label>E-posta</label>
@@ -122,7 +157,6 @@
         <button type="submit" class="submit-btn">Giriş Yap</button>
       </form>
 
-      <!-- Kayıt Formu -->
       <form id="form-signup" style="display: none;" onsubmit="handleSignUp(event)">
         <div class="form-group">
           <label>E-posta</label>
@@ -135,7 +169,6 @@
         <button type="submit" class="submit-btn">Kayıt Ol</button>
       </form>
 
-      <!-- Doğrulama Kodu Formu -->
       <form id="form-confirm" style="display: none;" onsubmit="handleConfirm(event)">
         <div class="form-group">
           <label>E-posta</label>
@@ -149,17 +182,28 @@
       </form>
     </div>
 
-    <!-- Giriş Yapıldı Görünümü -->
     <div id="auth-view" style="display: none;">
-      <div class="badge">Oturum Açıldı ✅</div>
-      <p>Hoş geldin, <b id="user-display-email" style="color:#38bdf8;"></b>!</p>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+        <span class="badge">Oturum Açıldı</span>
+        <button onclick="handleLogout()" style="background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 0.85rem; text-decoration: underline;">Çıkış Yap</button>
+      </div>
       
-      <div class="auth-state">
-        <span style="color:#94a3b8;">JWT Access Token Alındı (Sınav Konusu):</span>
-        <p style="font-family: monospace; font-size: 0.75rem; word-break: break-all; color:#a7f3d0;" id="token-preview"></p>
+      <p style="margin: 0; font-size: 0.95rem;">Hoş geldin, <b id="user-display-email" style="color:#38bdf8;"></b>!</p>
+
+      <div class="upload-zone">
+        <label for="photo-input" class="file-label">Bir Fotoğraf Seç (JPEG/PNG)</label>
+        <input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" onchange="handleFileSelect(event)" />
+        <div id="file-info" class="file-info">Henüz dosya seçilmedi</div>
+        <img id="preview" class="preview-img" alt="Önizleme" />
       </div>
 
-      <button onclick="handleLogout()" class="submit-btn" style="background:#475569; margin-top:1rem;">Çıkış Yap</button>
+      <div class="progress-bar-container" id="progress-container">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+
+      <button id="upload-btn" onclick="uploadPhoto()" class="submit-btn" style="margin-top: 1rem;" disabled>
+        Doğrudan S3'e Yükle (Presigned URL)
+      </button>
     </div>
 
     <div id="status-box" class="alert"></div>

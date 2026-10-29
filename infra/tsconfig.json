@@ -27,12 +27,12 @@
     "noEmit": true,
     "isolatedModules": true,
     "types": [
-      "jest",
       "node"
     ]
   },
   "exclude": [
     "node_modules",
-    "cdk.out"
+    "cdk.out",
+    "test"
   ]
 }
